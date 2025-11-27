@@ -1,0 +1,35 @@
+# Archivos de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Entornos virtuales
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Archivos de configuración con credenciales (ya están con placeholders)
+# config_supabase.py - Mantener en el repo pero con placeholders
+# main.py - Mantener en el repo pero con placeholders
+
+# Logs
+*.log
+
+# Archivos temporales
+*.tmp
+*.bak
+
