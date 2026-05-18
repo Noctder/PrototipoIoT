@@ -1,0 +1,10 @@
+# Sitio estático: el dashboard está en la carpeta web/
+[build]
+  publish = "web"
+  command = ""
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
