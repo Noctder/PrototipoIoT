@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#764ba2" />
+    <meta name="description" content="Agricultura inteligente: temperatura, humedad ambiental y de suelo, presión, riego automático y alertas desde ESP32" />
+    <title>Agricultura Inteligente - Monitor</title>
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/png" href="/icons/icon-192x192.png" />
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            color-scheme: light dark;
+        }
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-attachment: fixed;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 16px;
+            overflow-x: hidden;
+        }
+        .card {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 24px;
+            width: 100%;
+            max-width: 900px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin: 0 auto;
+        }
+        h1 {
+            margin: 0 0 8px;
+            font-size: clamp(1.5rem, 6vw, 2.2rem);
+            text-align: center;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+        .details {
+            font-size: clamp(0.85rem, 3vw, 0.95rem);
+            line-height: 1.5;
+            opacity: 0.9;
+            text-align: center;
+            margin-bottom: 24px;
+            padding: 0 4px;
+        }
+        .status {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+            margin: 24px 0;
+        }
+        .metric {
+            text-align: center;
+            border-radius: 16px;
+            padding: 20px 16px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            transition: transform 0.2s, box-shadow 0.2s;
+            backdrop-filter: blur(5px);
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .metric:active {
+            transform: scale(0.98);
+        }
+        .metric.temp {
+            background: linear-gradient(135deg, rgba(255, 107, 107, 0.2), rgba(255, 159, 64, 0.2));
+            border-color: rgba(255, 107, 107, 0.4);
+        }
+        .metric.hum {
+            background: linear-gradient(135deg, rgba(74, 144, 226, 0.2), rgba(80, 201, 195, 0.2));
+            border-color: rgba(74, 144, 226, 0.4);
+        }
+        .metric.pres {
+            background: linear-gradient(135deg, rgba(100, 255, 218, 0.2), rgba(64, 224, 208, 0.2));
+            border-color: rgba(100, 255, 218, 0.4);
+        }
+        .metric.soil {
+            background: linear-gradient(135deg, rgba(124, 179, 66, 0.2), rgba(156, 204, 101, 0.2));
+            border-color: rgba(139, 195, 74, 0.45);
+        }
+        .metric.soil.seco {
+            background: linear-gradient(135deg, rgba(255, 152, 0, 0.25), rgba(255, 87, 34, 0.2));
+            border-color: rgba(255, 152, 0, 0.55);
+        }
+        .metric.soil.humedo {
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.3), rgba(129, 199, 132, 0.25));
+            border-color: rgba(76, 175, 80, 0.55);
+        }
+        .metric.soil.intermedio {
+            background: linear-gradient(135deg, rgba(255, 235, 59, 0.15), rgba(255, 193, 7, 0.2));
+            border-color: rgba(255, 193, 7, 0.45);
+        }
+        .soil-hint {
+            margin: 8px 0 0;
+            font-size: clamp(0.7rem, 2.8vw, 0.8rem);
+            opacity: 0.85;
+            font-weight: 500;
+        }
+        .system-panel {
+            margin: 20px 0 8px;
+            padding: 18px;
+            border-radius: 16px;
+            background: rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .system-panel h3 {
+            margin: 0 0 14px;
+            font-size: clamp(0.9rem, 3.5vw, 1rem);
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            opacity: 0.9;
+        }
+        .system-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+        .status-pill {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: clamp(0.8rem, 3vw, 0.9rem);
+        }
+        .status-pill .label {
+            opacity: 0.85;
+        }
+        .status-pill > span:last-child {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            flex: 1;
+            min-width: 0;
+        }
+        .status-pill .value {
+            font-weight: 700;
+            text-align: right;
+        }
+        .status-pill.alerta {
+            background: rgba(255, 76, 41, 0.25);
+            border-color: rgba(255, 76, 41, 0.5);
+        }
+        .status-pill.riego-on {
+            background: rgba(33, 150, 243, 0.25);
+            border-color: rgba(33, 150, 243, 0.5);
+        }
+        .status-pill.riego-off {
+            background: rgba(76, 175, 80, 0.2);
+            border-color: rgba(76, 175, 80, 0.45);
+        }
+        .status-pill.riego-wait {
+            background: rgba(255, 193, 7, 0.15);
+            border-color: rgba(255, 193, 7, 0.4);
+        }
+        @media (min-width: 481px) {
+            .system-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+        .metric h2 {
+            margin: 0 0 10px;
+            font-size: clamp(0.8rem, 3.5vw, 0.95rem);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            opacity: 0.9;
+            font-weight: 600;
+        }
+        .metric-value {
+            margin: 0;
+            font-size: clamp(1.8rem, 8vw, 2.8rem);
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .metric-unit {
+            font-size: clamp(0.75rem, 3vw, 1rem);
+            opacity: 0.8;
+            font-weight: 500;
+            margin-top: 4px;
+            display: inline-block;
+        }
+        .footer-info {
+            margin-top: 28px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .footer-info > div {
+            text-align: center;
+        }
+        .chip {
+            display: inline-block;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: clamp(0.75rem, 3vw, 0.85rem);
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            min-height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .install-button {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .install-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+        .install-button:active {
+            transform: translateY(0);
+        }
+        .install-button.show {
+            display: block;
+        }
+        @media (max-width: 768px) {
+            .install-button {
+                bottom: 15px;
+                right: 15px;
+                padding: 10px 20px;
+                font-size: 13px;
+            }
+        }
+        #fecha {
+            font-size: clamp(0.8rem, 3vw, 0.9rem);
+            opacity: 0.85;
+            margin-bottom: 6px;
+            line-height: 1.4;
+            padding: 0 4px;
+        }
+        #indicador {
+            font-size: clamp(0.7rem, 2.5vw, 0.8rem);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            opacity: 0.7;
+            margin-top: 6px;
+        }
+        .charts-section {
+            margin-top: 32px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        .chart-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(5px);
+            min-width: 0;
+            overflow: hidden;
+        }
+        .chart-title {
+            font-size: clamp(0.85rem, 3vw, 1rem);
+            font-weight: 600;
+            margin-bottom: 12px;
+            text-align: center;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .chart-wrapper {
+            position: relative;
+            height: 220px;
+            width: 100%;
+            min-width: 0;
+        }
+
+        /* Tablet - 481px a 768px */
+        @media (min-width: 481px) {
+            body {
+                padding: 20px;
+                align-items: center;
+            }
+            .card {
+                padding: 32px;
+                border-radius: 24px;
+            }
+            .status {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 18px;
+            }
+            .metric {
+                padding: 22px 18px;
+            }
+            .metric:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+            }
+            .chart-wrapper {
+                height: 240px;
+            }
+            .charts-section {
+                gap: 24px;
+            }
+            .chart-container {
+                padding: 20px;
+            }
+        }
+
+        /* Desktop pequeño - 769px a 1024px */
+        @media (min-width: 769px) {
+            .card {
+                padding: 32px;
+                max-width: 1200px;
+            }
+            .status {
+                grid-template-columns: repeat(4, 1fr);
+                gap: 18px;
+            }
+            .metric {
+                padding: 24px 18px;
+                min-height: 140px;
+            }
+            .chart-wrapper {
+                height: 240px;
+            }
+            .charts-section {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 16px;
+            }
+            .chart-container {
+                padding: 16px;
+            }
+        }
+
+        /* Desktop grande - 1025px+ */
+        @media (min-width: 1025px) {
+            .card {
+                padding: 40px;
+                max-width: 1200px;
+            }
+            .status {
+                gap: 20px;
+            }
+            .chart-wrapper {
+                height: 250px;
+            }
+            .charts-section {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 20px;
+            }
+            .chart-container {
+                padding: 20px;
+            }
+        }
+
+        /* Orientación horizontal en móviles */
+        @media (max-width: 768px) and (orientation: landscape) {
+            .status {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 12px;
+            }
+            .metric {
+                padding: 16px 12px;
+                min-height: 100px;
+            }
+            .metric-value {
+                font-size: clamp(1.5rem, 6vw, 2rem);
+            }
+            .chart-wrapper {
+                height: 180px;
+            }
+        }
+
+        /* Mejoras de accesibilidad táctil */
+        @media (hover: none) and (pointer: coarse) {
+            .metric {
+                -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
+            }
+        }
+
+        /* Evitar zoom en inputs (si se agregan en el futuro) */
+        @media (max-width: 768px) {
+            input, select, textarea {
+                font-size: 16px !important;
+            }
+        }
+    </style>
+    <script type="module">
+        import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+
+        // Credenciales de Supabase (proyecto AgriculturaInteligente)
+        const SUPABASE_URL = "https://qpvfjgmpyqqlmssqfkoh.supabase.co";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFwdmZqZ21weXFxbG1zc3Fma29oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0NTE4MjksImV4cCI6MjA4OTAyNzgyOX0.jC-okr8hx-8mHW9_cOvgOEenD-eCK2RUwnmMOdjbYMg";
+        const TABLE = "agricultura_lecturas";
+
+        // Umbrales (mismos que esp32/config_supabase.py)
+        const RIEGO_ACTIVAR_POR_DEBAJO_DE = 35;
+        const RIEGO_NO_REGAR_POR_ENCIMA_DE = 50;
+        const HUMEDAD_SUELO_ALERTA_BAJA = 30;
+        const TEMP_ALERTA_CALOR = 32;
+        const HUMEDAD_ALERTA_BAJA = 25;
+
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const tempEl = document.getElementById("temperature");
+        const humEl = document.getElementById("humidity");
+        const humSoilEl = document.getElementById("soilHumidity");
+        const soilHintEl = document.getElementById("soilHint");
+        const soilMetricEl = document.getElementById("soilMetric");
+        const presEl = document.getElementById("pressure");
+        const estadoEl = document.getElementById("estado");
+        const fechaEl = document.getElementById("fecha");
+        const indicadorEl = document.getElementById("indicador");
+        const riegoEstadoEl = document.getElementById("riegoEstado");
+        const alertaEstadoEl = document.getElementById("alertaEstado");
+        const ambienteEstadoEl = document.getElementById("ambienteEstado");
+
+        // Configuración de gráficas
+        let tempChart, humChart, humSoilChart, presChart;
+        const MAX_POINTS = 20; // Número máximo de puntos en las gráficas
+
+        function inicializarGraficas() {
+            // Opciones comunes para todas las gráficas
+            const isMobile = window.innerWidth <= 768;
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        padding: isMobile ? 8 : 12,
+                        titleFont: {
+                            size: isMobile ? 12 : 14
+                        },
+                        bodyFont: {
+                            size: isMobile ? 11 : 13
+                        },
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        ticks: {
+                            color: 'rgba(255, 255, 255, 0.7)',
+                            font: {
+                                size: isMobile ? 10 : 12
+                            },
+                            padding: isMobile ? 4 : 8
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)',
+                            drawBorder: false
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            color: 'rgba(255, 255, 255, 0.7)',
+                            font: {
+                                size: isMobile ? 9 : 11
+                            },
+                            maxRotation: isMobile ? 0 : 45,
+                            minRotation: isMobile ? 0 : 45,
+                            maxTicksLimit: isMobile ? 5 : 10
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)',
+                            drawBorder: false
+                        }
+                    }
+                }
+            };
+
+            // Gráfica de Temperatura
+            const tempCtx = document.getElementById('tempChart').getContext('2d');
+            tempChart = new Chart(tempCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Temperatura (°C)',
+                        data: [],
+                        borderColor: 'rgb(255, 107, 107)',
+                        backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                        borderWidth: isMobile ? 1.5 : 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: isMobile ? 2 : 3,
+                        pointHoverRadius: isMobile ? 4 : 5
+                    }]
+                },
+                options: commonOptions
+            });
+
+            const soilChartOptions = {
+                ...commonOptions,
+                scales: {
+                    ...commonOptions.scales,
+                    y: {
+                        ...commonOptions.scales.y,
+                        min: 0,
+                        max: 100,
+                        ticks: {
+                            ...commonOptions.scales.y.ticks,
+                            callback: (v) => v + '%'
+                        }
+                    }
+                }
+            };
+
+            // Gráfica de Humedad ambiental
+            const humCtx = document.getElementById('humChart').getContext('2d');
+            humChart = new Chart(humCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Humedad ambiente (%)',
+                        data: [],
+                        borderColor: 'rgb(74, 144, 226)',
+                        backgroundColor: 'rgba(74, 144, 226, 0.1)',
+                        borderWidth: isMobile ? 1.5 : 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: isMobile ? 2 : 3,
+                        pointHoverRadius: isMobile ? 4 : 5
+                    }]
+                },
+                options: commonOptions
+            });
+
+            // Gráfica de Presión
+            const presCtx = document.getElementById('presChart').getContext('2d');
+            presChart = new Chart(presCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Presión (hPa)',
+                        data: [],
+                        borderColor: 'rgb(100, 255, 218)',
+                        backgroundColor: 'rgba(100, 255, 218, 0.15)',
+                        borderWidth: isMobile ? 1.5 : 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: isMobile ? 2 : 3,
+                        pointHoverRadius: isMobile ? 4 : 5
+                    }]
+                },
+                options: commonOptions
+            });
+
+            // Gráfica de Humedad de Suelo
+            const humSoilCtx = document.getElementById('humSoilChart').getContext('2d');
+            humSoilChart = new Chart(humSoilCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Humedad Suelo (%)',
+                        data: [],
+                        borderColor: 'rgb(139, 195, 74)',
+                        backgroundColor: 'rgba(139, 195, 74, 0.15)',
+                        borderWidth: isMobile ? 1.5 : 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: isMobile ? 2 : 3,
+                        pointHoverRadius: isMobile ? 4 : 5
+                    }]
+                },
+                options: soilChartOptions
+            });
+
+            // Redimensionar gráficas al cambiar el tamaño de ventana
+            window.addEventListener('resize', () => {
+                if (tempChart) tempChart.resize();
+                if (humChart) humChart.resize();
+                if (humSoilChart) humSoilChart.resize();
+                if (presChart) presChart.resize();
+            });
+        }
+
+        function actualizarGrafica(chart, valor, etiqueta) {
+            if (!chart) return;
+            
+            // Verificar si el último punto ya tiene la misma etiqueta (evitar duplicados)
+            const ultimoIndice = chart.data.labels.length - 1;
+            if (ultimoIndice >= 0 && chart.data.labels[ultimoIndice] === etiqueta) {
+                // Actualizar el último punto en lugar de agregar uno nuevo
+                chart.data.datasets[0].data[ultimoIndice] = valor;
+            } else {
+                // Agregar nuevo punto solo si es diferente
+                chart.data.labels.push(etiqueta);
+                chart.data.datasets[0].data.push(valor);
+                
+                // Limitar el número de puntos
+                if (chart.data.labels.length > MAX_POINTS) {
+                    chart.data.labels.shift();
+                    chart.data.datasets[0].data.shift();
+                }
+            }
+            
+            chart.update('none'); // Actualizar sin animación para mejor rendimiento
+        }
+
+        function formatearHora(fecha) {
+            const d = new Date(fecha);
+            return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function evaluarRiego(humedadSuelo) {
+            if (humedadSuelo === null || humedadSuelo === undefined || Number.isNaN(humedadSuelo)) {
+                return {
+                    titulo: "Sin dato",
+                    detalle: "Sensor de suelo no reportado",
+                    clase: "riego-wait"
+                };
+            }
+            const pct = Number(humedadSuelo);
+            if (pct < RIEGO_ACTIVAR_POR_DEBAJO_DE) {
+                return {
+                    titulo: "Riego en ciclo",
+                    detalle: `Suelo seco (${pct}% < ${RIEGO_ACTIVAR_POR_DEBAJO_DE}%) — bomba ~5 s`,
+                    clase: "riego-on"
+                };
+            }
+            if (pct >= RIEGO_NO_REGAR_POR_ENCIMA_DE) {
+                return {
+                    titulo: "Sin riego",
+                    detalle: `Suelo húmedo (${pct}% ≥ ${RIEGO_NO_REGAR_POR_ENCIMA_DE}%)`,
+                    clase: "riego-off"
+                };
+            }
+            return {
+                titulo: "En espera",
+                detalle: `Zona ${RIEGO_ACTIVAR_POR_DEBAJO_DE}–${RIEGO_NO_REGAR_POR_ENCIMA_DE - 1}% (actual ${pct}%)`,
+                clase: "riego-wait"
+            };
+        }
+
+        function claseSuelo(humedadSuelo) {
+            if (humedadSuelo === null || humedadSuelo === undefined) return "";
+            const pct = Number(humedadSuelo);
+            if (pct < RIEGO_ACTIVAR_POR_DEBAJO_DE) return "seco";
+            if (pct >= RIEGO_NO_REGAR_POR_ENCIMA_DE) return "humedo";
+            return "intermedio";
+        }
+
+        function hintSuelo(humedadSuelo) {
+            if (humedadSuelo === null || humedadSuelo === undefined) return "Sin lectura";
+            const pct = Number(humedadSuelo);
+            if (pct < HUMEDAD_SUELO_ALERTA_BAJA) return "⚠️ Muy seco";
+            if (pct < RIEGO_ACTIVAR_POR_DEBAJO_DE) return "Seco — riego automático";
+            if (pct >= RIEGO_NO_REGAR_POR_ENCIMA_DE) return "Húmedo — bomba apagada";
+            return "Nivel intermedio";
+        }
+
+        function textoAlerta(data) {
+            if (!data?.es_alerta) return "Normal";
+            const partes = [];
+            const t = Number(data.temperatura);
+            const h = Number(data.humedad);
+            const s = data.humedad_suelo !== null ? Number(data.humedad_suelo) : null;
+            if (!Number.isNaN(t) && t >= TEMP_ALERTA_CALOR) partes.push(`Calor ≥${TEMP_ALERTA_CALOR}°C`);
+            if (!Number.isNaN(h) && h < HUMEDAD_ALERTA_BAJA) partes.push(`Aire seco <${HUMEDAD_ALERTA_BAJA}%`);
+            if (s !== null && !Number.isNaN(s) && s < HUMEDAD_SUELO_ALERTA_BAJA) partes.push(`Suelo <${HUMEDAD_SUELO_ALERTA_BAJA}%`);
+            return partes.length ? partes.join(" · ") : "Condición de alerta";
+        }
+
+        function actualizarPanelSistema(data) {
+            const riego = evaluarRiego(
+                data?.humedad_suelo !== null && data?.humedad_suelo !== undefined
+                    ? Number(data.humedad_suelo)
+                    : null
+            );
+            riegoEstadoEl.className = "status-pill " + riego.clase;
+            riegoEstadoEl.querySelector(".value").textContent = riego.titulo;
+            riegoEstadoEl.querySelector(".detail").textContent = riego.detalle;
+
+            const esAlerta = Boolean(data?.es_alerta);
+            alertaEstadoEl.className = "status-pill" + (esAlerta ? " alerta" : "");
+            alertaEstadoEl.querySelector(".value").textContent = esAlerta ? "Activa" : "Sin alerta";
+            alertaEstadoEl.querySelector(".detail").textContent = data ? textoAlerta(data) : "—";
+
+            ambienteEstadoEl.querySelector(".value").textContent = data?.estado || "—";
+            const t = data ? Number(data.temperatura) : null;
+            const h = data ? Number(data.humedad) : null;
+            let det = [];
+            if (t !== null && !Number.isNaN(t)) det.push(`${t.toFixed(1)}°C`);
+            if (h !== null && !Number.isNaN(h)) det.push(`${h.toFixed(1)}% aire`);
+            ambienteEstadoEl.querySelector(".detail").textContent = det.length ? det.join(" · ") : "—";
+        }
+
+        async function cargarDatosHistoricos() {
+            try {
+                const { data, error } = await supabase
+                    .from(TABLE)
+                    .select("temperatura, humedad, humedad_suelo, presion, created_at")
+                    .order("created_at", { ascending: false })
+                    .limit(MAX_POINTS);
+
+                if (error) throw error;
+
+                if (data && data.length > 0) {
+                    // Invertir para mostrar del más antiguo al más reciente
+                    data.reverse();
+                    
+                    const labels = data.map(d => formatearHora(d.created_at));
+                    const temps = data.map(d => Number(d.temperatura));
+                    const hums = data.map(d => Number(d.humedad));
+                    const humSoil = data.map(d => d.humedad_suelo !== null ? Number(d.humedad_suelo) : null);
+                    const pres = data.map(d => d.presion !== null ? Number(d.presion) : null);
+
+                    // Actualizar gráficas
+                    if (tempChart) {
+                        tempChart.data.labels = labels;
+                        tempChart.data.datasets[0].data = temps;
+                        tempChart.update();
+                    }
+                    if (humChart) {
+                        humChart.data.labels = labels;
+                        humChart.data.datasets[0].data = hums;
+                        humChart.update();
+                    }
+                    if (humSoilChart) {
+                        humSoilChart.data.labels = labels;
+                        humSoilChart.data.datasets[0].data = humSoil;
+                        humSoilChart.update();
+                    }
+                    if (presChart) {
+                        presChart.data.labels = labels;
+                        presChart.data.datasets[0].data = pres;
+                        presChart.update();
+                    }
+                }
+            } catch (err) {
+                console.error("Error cargando datos históricos:", err);
+            }
+        }
+
+        function renderLectura(data) {
+            if (!data) {
+                estadoEl.textContent = "Sin registros";
+                fechaEl.textContent = "Aún no hay datos disponibles";
+                indicadorEl.textContent = "En espera de nuevos datos";
+                tempEl.textContent = "--";
+                humEl.textContent = "--";
+                humSoilEl.textContent = "--";
+                presEl.textContent = "--";
+                if (soilHintEl) soilHintEl.textContent = "";
+                if (soilMetricEl) soilMetricEl.className = "metric soil";
+                actualizarPanelSistema(null);
+                return;
+            }
+
+            const temperatura = Number(data.temperatura).toFixed(1);
+            const humedad = Number(data.humedad).toFixed(1);
+            const humedadSuelo = data.humedad_suelo !== null && data.humedad_suelo !== undefined
+                ? Number(data.humedad_suelo).toFixed(0)
+                : null;
+            const presion = data.presion !== null && data.presion !== undefined 
+                ? Number(data.presion).toFixed(2) 
+                : null;
+            const estado = data.estado || "---";
+            const esAlerta = Boolean(data.es_alerta);
+            const fecha = new Date(data.created_at);
+
+            tempEl.innerHTML = `${temperatura}<span class="metric-unit">°C</span>`;
+            humEl.innerHTML = `${humedad}<span class="metric-unit">%</span>`;
+            humSoilEl.innerHTML = humedadSuelo !== null
+                ? `${humedadSuelo}<span class="metric-unit">%</span>`
+                : `<span style="opacity: 0.6;">N/A</span>`;
+            if (soilMetricEl) {
+                soilMetricEl.className = "metric soil " + claseSuelo(
+                    humedadSuelo !== null ? Number(humedadSuelo) : null
+                );
+            }
+            if (soilHintEl) {
+                soilHintEl.textContent = hintSuelo(
+                    humedadSuelo !== null ? Number(humedadSuelo) : null
+                );
+            }
+            presEl.innerHTML = presion !== null 
+                ? `${presion}<span class="metric-unit">hPa</span>` 
+                : `<span style="opacity: 0.6;">N/A</span>`;
+            estadoEl.textContent = estado;
+            estadoEl.className = "chip";
+            estadoEl.style.background = esAlerta ? "rgba(255,76,41,0.35)" : "rgba(255,255,255,0.18)";
+            estadoEl.style.border = esAlerta ? "1px solid rgba(255,76,41,0.7)" : "1px solid rgba(255,255,255,0.3)";
+            estadoEl.style.color = esAlerta ? "#ffcfcc" : "#fff";
+
+            fechaEl.textContent = `Última actualización: ${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString()}`;
+            indicadorEl.textContent = "Actualizado en tiempo real";
+            actualizarPanelSistema(data);
+
+            // Actualizar gráficas
+            const hora = formatearHora(data.created_at);
+            actualizarGrafica(tempChart, Number(temperatura), hora);
+            actualizarGrafica(humChart, Number(humedad), hora);
+            if (humedadSuelo !== null) {
+                actualizarGrafica(humSoilChart, Number(humedadSuelo), hora);
+            }
+            if (presion !== null) {
+                actualizarGrafica(presChart, Number(presion), hora);
+            }
+        }
+
+        async function cargarUltimaLectura() {
+            indicadorEl.textContent = "Actualizando...";
+            const { data, error } = await supabase
+                .from(TABLE)
+                .select("temperatura, humedad, humedad_suelo, presion, estado, es_alerta, created_at")
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .single();
+
+            if (error) {
+                estadoEl.textContent = "Error al consultar";
+                fechaEl.textContent = error.message;
+                indicadorEl.textContent = "Última actualización fallida";
+                throw error;
+            }
+
+            renderLectura(data);
+        }
+
+        // Inicializar gráficas y cargar datos
+        inicializarGraficas();
+        cargarDatosHistoricos();
+        cargarUltimaLectura().catch(console.error);
+
+        const canal = supabase.channel("agricultura_lecturas_changes");
+        canal.on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: TABLE },
+            payload => {
+                console.log("🔔 Cambio recibido", payload.eventType, payload.new);
+                if (payload.new) {
+                    renderLectura(payload.new);
+                } else {
+                    cargarUltimaLectura().catch(console.error);
+                }
+            }
+        );
+
+        canal.subscribe(status => {
+            if (status === "SUBSCRIBED") {
+                indicadorEl.textContent = "Suscrito a actualizaciones";
+            } else if (status === "CHANNEL_ERROR") {
+                indicadorEl.textContent = "Error en canal realtime";
+            } else if (status === "TIMED_OUT") {
+                indicadorEl.textContent = "Timeout en canal realtime";
+            }
+        });
+
+        // Manejar instalación de PWA
+        let deferredPrompt;
+        const installButton = document.getElementById('installButton');
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Prevenir el banner automático
+            e.preventDefault();
+            // Guardar el evento para usarlo después
+            deferredPrompt = e;
+            // Mostrar el botón de instalación
+            if (installButton) {
+                installButton.classList.add('show');
+            }
+            console.log('✅ Instalación PWA disponible');
+        });
+
+        // Manejar clic en botón de instalación
+        if (installButton) {
+            installButton.addEventListener('click', async () => {
+                if (!deferredPrompt) {
+                    // Si no hay prompt disponible, dar instrucciones
+                    alert('Para instalar esta app:\n\n' +
+                        'Chrome/Edge: Busca el icono de instalación en la barra de direcciones (extremo derecho)\n\n' +
+                        'Android: Menú → "Instalar app"\n\n' +
+                        'iOS: Botón compartir → "Añadir a pantalla de inicio"');
+                    return;
+                }
+
+                // Mostrar el prompt de instalación
+                deferredPrompt.prompt();
+                
+                // Esperar la respuesta del usuario
+                const { outcome } = await deferredPrompt.userChoice;
+                
+                if (outcome === 'accepted') {
+                    console.log('✅ Usuario aceptó instalar la PWA');
+                    installButton.classList.remove('show');
+                } else {
+                    console.log('❌ Usuario rechazó instalar la PWA');
+                }
+                
+                // Limpiar el prompt
+                deferredPrompt = null;
+            });
+        }
+
+        // Ocultar botón si ya está instalado
+        window.addEventListener('appinstalled', () => {
+            console.log('✅ PWA instalada');
+            if (installButton) {
+                installButton.classList.remove('show');
+            }
+            deferredPrompt = null;
+        });
+
+        // Verificar si ya está instalado
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+            console.log('✅ PWA ya está instalada');
+            if (installButton) {
+                installButton.classList.remove('show');
+            }
+        }
+
+        // Registrar Service Worker para PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then((registration) => {
+                        console.log('✅ Service Worker registrado:', registration.scope);
+                    })
+                    .catch((error) => {
+                        console.error('❌ Error registrando Service Worker:', error);
+                    });
+            });
+        }
+    </script>
+</head>
+<body>
+    <main class="card">
+        <h1>🌾 Agricultura Inteligente</h1>
+        <p class="details">Gemelo digital en Supabase: temperatura, humedad del aire, humedad de suelo, presión y estado del riego automático (bomba vía relé GPIO 26). Datos en tiempo real desde el ESP32 en Deep Sleep.</p>
+        <div class="status">
+            <div class="metric temp">
+                <h2>🌡️ Temperatura</h2>
+                <p class="metric-value" id="temperature">--</p>
+            </div>
+            <div class="metric hum">
+                <h2>💧 Humedad ambiente</h2>
+                <p class="metric-value" id="humidity">--</p>
+            </div>
+            <div class="metric soil" id="soilMetric">
+                <h2>🌱 Humedad suelo</h2>
+                <p class="metric-value" id="soilHumidity">--</p>
+                <p class="soil-hint" id="soilHint"></p>
+            </div>
+            <div class="metric pres">
+                <h2>🌬️ Presión</h2>
+                <p class="metric-value" id="pressure">--</p>
+            </div>
+        </div>
+
+        <section class="system-panel" aria-label="Estado del sistema">
+            <h3>Estado del cultivo</h3>
+            <div class="system-grid">
+                <div class="status-pill riego-wait" id="riegoEstado">
+                    <span class="label">💧 Riego automático</span>
+                    <span>
+                        <div class="value">—</div>
+                        <div class="detail" style="font-size:0.75rem;font-weight:500;opacity:0.85;margin-top:4px;">—</div>
+                    </span>
+                </div>
+                <div class="status-pill" id="ambienteEstado">
+                    <span class="label">🌤️ Ambiente</span>
+                    <span>
+                        <div class="value">—</div>
+                        <div class="detail" style="font-size:0.75rem;font-weight:500;opacity:0.85;margin-top:4px;">—</div>
+                    </span>
+                </div>
+                <div class="status-pill" id="alertaEstado">
+                    <span class="label">⚠️ Alertas</span>
+                    <span>
+                        <div class="value">—</div>
+                        <div class="detail" style="font-size:0.75rem;font-weight:500;opacity:0.85;margin-top:4px;">—</div>
+                    </span>
+                </div>
+            </div>
+        </section>
+
+        <div class="footer-info">
+            <div style="text-align: center;">
+                <span id="estado" class="chip">----</span>
+                <div id="fecha"></div>
+                <p id="indicador">Actualizando...</p>
+            </div>
+        </div>
+
+        <div class="charts-section">
+            <div class="chart-container">
+                <div class="chart-title">🌡️ Evolución de Temperatura</div>
+                <div class="chart-wrapper">
+                    <canvas id="tempChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-container">
+                <div class="chart-title">💧 Evolución humedad ambiente</div>
+                <div class="chart-wrapper">
+                    <canvas id="humChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-container">
+                <div class="chart-title">🌬️ Evolución de presión</div>
+                <div class="chart-wrapper">
+                    <canvas id="presChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-container">
+                <div class="chart-title">🌱 Evolución humedad de suelo (0–100%)</div>
+                <div class="chart-wrapper">
+                    <canvas id="humSoilChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Botón de instalación PWA -->
+    <button id="installButton" class="install-button" title="Instalar app">
+        📱 Instalar App
+    </button>
+</body>
+</html>
