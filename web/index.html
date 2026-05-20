@@ -179,6 +179,67 @@
                 grid-template-columns: repeat(3, 1fr);
             }
         }
+        .prediction-panel {
+            margin-top: 16px;
+            border-color: rgba(255, 193, 7, 0.35);
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .prediction-intro {
+            margin: 0 0 14px;
+            text-align: center;
+            font-size: clamp(0.8rem, 3vw, 0.9rem);
+            opacity: 0.88;
+            line-height: 1.45;
+        }
+        .prediction-card {
+            border-radius: 14px;
+            padding: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .prediction-card .risk-title {
+            margin: 0 0 8px;
+            font-size: clamp(1rem, 4vw, 1.15rem);
+            font-weight: 700;
+        }
+        .prediction-card .risk-msg {
+            margin: 0 0 12px;
+            font-size: clamp(0.85rem, 3vw, 0.95rem);
+            line-height: 1.5;
+            opacity: 0.95;
+        }
+        .prediction-card.risk-alto {
+            background: rgba(255, 76, 41, 0.22);
+            border-color: rgba(255, 76, 41, 0.55);
+        }
+        .prediction-card.risk-medio {
+            background: rgba(255, 193, 7, 0.18);
+            border-color: rgba(255, 193, 7, 0.5);
+        }
+        .prediction-card.risk-bajo {
+            background: rgba(76, 175, 80, 0.18);
+            border-color: rgba(76, 175, 80, 0.45);
+        }
+        .prediction-card.risk-wait {
+            background: rgba(255, 255, 255, 0.06);
+        }
+        .prediction-weather {
+            margin-top: 12px;
+            font-size: clamp(0.75rem, 2.8vw, 0.85rem);
+            opacity: 0.85;
+            text-align: center;
+            line-height: 1.5;
+        }
+        .prediction-badge {
+            display: inline-block;
+            margin-bottom: 10px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
         .metric h2 {
             margin: 0 0 10px;
             font-size: clamp(0.8rem, 3.5vw, 0.95rem);
@@ -430,7 +491,12 @@
         const TEMP_ALERTA_CALOR = 32;
         const HUMEDAD_ALERTA_BAJA = 25;
 
+        // Colima, México — pronóstico Open-Meteo (datos externos de clima)
+        const CLIMA_LAT = 19.2433;
+        const CLIMA_LON = -103.724;
+
         const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        let ultimaLectura = null;
 
         const tempEl = document.getElementById("temperature");
         const humEl = document.getElementById("humidity");
@@ -444,6 +510,8 @@
         const riegoEstadoEl = document.getElementById("riegoEstado");
         const alertaEstadoEl = document.getElementById("alertaEstado");
         const ambienteEstadoEl = document.getElementById("ambienteEstado");
+        const prediccionCardEl = document.getElementById("prediccionCard");
+        const climaResumenEl = document.getElementById("climaResumen");
 
         // Configuración de gráficas
         let tempChart, humChart, humSoilChart, presChart;
@@ -731,6 +799,130 @@
             ambienteEstadoEl.querySelector(".detail").textContent = det.length ? det.join(" · ") : "—";
         }
 
+        async function obtenerClimaExterno() {
+            const url = new URL("https://api.open-meteo.com/v1/forecast");
+            url.searchParams.set("latitude", String(CLIMA_LAT));
+            url.searchParams.set("longitude", String(CLIMA_LON));
+            url.searchParams.set("daily", "temperature_2m_max,precipitation_sum,precipitation_probability_max");
+            url.searchParams.set("timezone", "America/Mexico_City");
+            url.searchParams.set("forecast_days", "3");
+
+            const res = await fetch(url);
+            if (!res.ok) throw new Error("No se pudo obtener el clima");
+            const json = await res.json();
+            const d = json.daily;
+            const dias = d.time || [];
+            const lluviaMm = (d.precipitation_sum || []).reduce((a, b) => a + (Number(b) || 0), 0);
+            const probLluvia = Math.max(...(d.precipitation_probability_max || [0]).map(Number));
+            const tempMax = Number(d.temperature_2m_max?.[0]);
+            return {
+                dias,
+                lluviaProx3dMm: Math.round(lluviaMm * 10) / 10,
+                probLluviaMax: probLluvia,
+                tempMaxManana: Number.isNaN(tempMax) ? null : tempMax
+            };
+        }
+
+        function calcularPrediccion(lectura, clima) {
+            const suelo = lectura?.humedad_suelo !== null && lectura?.humedad_suelo !== undefined
+                ? Number(lectura.humedad_suelo)
+                : null;
+            const tempActual = lectura ? Number(lectura.temperatura) : null;
+
+            if (!clima) {
+                return {
+                    nivel: "wait",
+                    titulo: "Calculando…",
+                    mensaje: "Obteniendo pronóstico del clima.",
+                    preventiva: false,
+                    badge: "En espera"
+                };
+            }
+
+            const lluvia = clima.lluviaProx3dMm;
+            const calor = (clima.tempMaxManana ?? tempActual) >= 30;
+            const pocaLluvia = lluvia < 3;
+            const sueloBajo = suelo !== null && !Number.isNaN(suelo) && suelo < 40;
+            const sueloMuyBajo = suelo !== null && !Number.isNaN(suelo) && suelo < RIEGO_ACTIVAR_POR_DEBAJO_DE;
+
+            if (sueloMuyBajo && pocaLluvia && calor) {
+                return {
+                    nivel: "alto",
+                    titulo: "Alto riesgo de sequía",
+                    mensaje: "El suelo está seco, se prevé poco lluvia y temperaturas altas. Conviene revisar el riego de forma preventiva.",
+                    preventiva: true,
+                    badge: "Alerta preventiva"
+                };
+            }
+            if (sueloBajo && pocaLluvia) {
+                return {
+                    nivel: "medio",
+                    titulo: "Riesgo moderado",
+                    mensaje: "La humedad del suelo es baja y el pronóstico indica poca lluvia en los próximos días. Vigila el cultivo.",
+                    preventiva: true,
+                    badge: "Aviso preventivo"
+                };
+            }
+            if (lluvia >= 5) {
+                return {
+                    nivel: "bajo",
+                    titulo: "Condiciones favorables",
+                    mensaje: "Se espera lluvia en los próximos días; el suelo podría mantener o recuperar humedad sin riego extra.",
+                    preventiva: false,
+                    badge: "Sin alerta preventiva"
+                };
+            }
+            return {
+                nivel: "bajo",
+                titulo: "Estable",
+                mensaje: "Según el sensor y el clima externo, no hay un riesgo alto inmediato de sequía.",
+                preventiva: false,
+                badge: "Normal"
+            };
+        }
+
+        function renderPrediccion(resultado, clima) {
+            if (!prediccionCardEl) return;
+            prediccionCardEl.className = "prediction-card risk-" + resultado.nivel;
+            prediccionCardEl.innerHTML =
+                `<span class="prediction-badge">${resultado.badge}</span>` +
+                `<p class="risk-title">${resultado.titulo}</p>` +
+                `<p class="risk-msg">${resultado.mensaje}</p>`;
+
+            if (climaResumenEl && clima) {
+                const t = clima.tempMaxManana !== null ? `${clima.tempMaxManana}°C máx.` : "—";
+                climaResumenEl.textContent =
+                    `Pronóstico local (3 días): lluvia acumulada ~${clima.lluviaProx3dMm} mm · ` +
+                    `prob. de lluvia hasta ${clima.probLluviaMax}% · temp. máx. mañana ${t} · Fuente: Open-Meteo`;
+            }
+        }
+
+        async function actualizarPrediccion(lectura) {
+            if (lectura) ultimaLectura = lectura;
+            renderPrediccion({
+                nivel: "wait",
+                titulo: "Analizando…",
+                mensaje: "Combinando lecturas del sensor con datos externos del clima.",
+                preventiva: false,
+                badge: "Predicción"
+            }, null);
+            try {
+                const clima = await obtenerClimaExterno();
+                const resultado = calcularPrediccion(ultimaLectura, clima);
+                renderPrediccion(resultado, clima);
+            } catch (err) {
+                console.error("Predicción:", err);
+                renderPrediccion({
+                    nivel: "wait",
+                    titulo: "Clima no disponible",
+                    mensaje: "No se pudo cargar el pronóstico. Las lecturas del sensor siguen activas.",
+                    preventiva: false,
+                    badge: "Sin pronóstico"
+                }, null);
+                if (climaResumenEl) climaResumenEl.textContent = "";
+            }
+        }
+
         async function cargarDatosHistoricos() {
             try {
                 const { data, error } = await supabase
@@ -790,6 +982,7 @@
                 if (soilHintEl) soilHintEl.textContent = "";
                 if (soilMetricEl) soilMetricEl.className = "metric soil";
                 actualizarPanelSistema(null);
+                actualizarPrediccion(null);
                 return;
             }
 
@@ -832,6 +1025,7 @@
             fechaEl.textContent = `Última actualización: ${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString()}`;
             indicadorEl.textContent = "Actualizado en tiempo real";
             actualizarPanelSistema(data);
+            actualizarPrediccion(data);
 
             // Actualizar gráficas
             const hora = formatearHora(data.created_at);
@@ -868,6 +1062,7 @@
         inicializarGraficas();
         cargarDatosHistoricos();
         cargarUltimaLectura().catch(console.error);
+        actualizarPrediccion(null);
 
         const canal = supabase.channel("agricultura_lecturas_changes");
         canal.on(
@@ -973,7 +1168,7 @@
 <body>
     <main class="card">
         <h1>🌾 Agricultura Inteligente</h1>
-        <p class="details">Gemelo digital en Supabase: temperatura, humedad del aire, humedad de suelo, presión y estado del riego automático (bomba vía relé GPIO 26). Datos en tiempo real desde el ESP32 en Deep Sleep.</p>
+        <p class="details">Consulta en tiempo real la temperatura, la humedad del aire, la humedad del suelo, la presión y si el riego automático está activo. Los datos se actualizan solos cuando el sensor envía una nueva lectura.</p>
         <div class="status">
             <div class="metric temp">
                 <h2>🌡️ Temperatura</h2>
@@ -1019,6 +1214,17 @@
                     </span>
                 </div>
             </div>
+        </section>
+
+        <section class="system-panel prediction-panel" aria-label="Predicciones inteligentes">
+            <h3>🔮 Predicciones inteligentes</h3>
+            <p class="prediction-intro">Estima el riesgo de sequía combinando las lecturas del sensor con el pronóstico del clima (fuente externa Open-Meteo) y muestra alertas preventivas.</p>
+            <div id="prediccionCard" class="prediction-card risk-wait">
+                <span class="prediction-badge">Predicción</span>
+                <p class="risk-title">Cargando…</p>
+                <p class="risk-msg">Obteniendo datos del clima y del cultivo.</p>
+            </div>
+            <p class="prediction-weather" id="climaResumen"></p>
         </section>
 
         <div class="footer-info">

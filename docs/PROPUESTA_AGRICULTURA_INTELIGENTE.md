@@ -42,8 +42,8 @@ Sistema de monitoreo agrícola basado en la arquitectura de la infografía: **no
 
 ### 2.3 Alertas y predicciones
 
-- **En el ESP32:** umbrales simples (ej. temperatura > 27 °C, humedad < 30 %) → enviar alerta por Telegram.
-- **En la nube (futuro):** estimar sequía/riesgo con datos externos (clima) y generar alertas preventivas; el firmware actual deja los datos listos para eso.
+- **En el ESP32:** umbrales simples (ej. temperatura alta, humedad baja, suelo seco) → `es_alerta` y buzzer.
+- **En la web (gemelo digital):** predicciones inteligentes con **datos externos de clima** (API Open-Meteo) + última humedad de suelo del sensor → estimación de riesgo de sequía y **alertas preventivas** en el dashboard.
 
 ---
 

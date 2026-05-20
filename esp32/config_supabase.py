@@ -7,8 +7,8 @@ SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
 SUPABASE_TABLE = "agricultura_lecturas"
 
 # ----- WiFi -----
-WIFI_SSID = "AQUI_VA_TU_RED_WIFI"
-WIFI_PASSWORD = "AQUI_VA_TU_CONTRASEÑA"
+WIFI_SSID = "POCO F7"
+WIFI_PASSWORD = "Zumi980208"
 
 # ----- Telegram (alertas; opcional) -----
 # Desactivado por ahora. Cuando lo quieras habilitar:
